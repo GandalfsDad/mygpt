@@ -7,7 +7,7 @@ class Batcher:
         self.val = val
         self.block_size = block_size
 
-    def get_batch(self, batch_size, train=True):
+    def get_batch(self, batch_size, train=True, device='cpu'):
         if train:
             data = self.train
         else:
@@ -18,6 +18,8 @@ class Batcher:
         x = torch.stack([data[i:i+self.block_size] for i in idx])
         y = torch.stack([data[i+1:i+self.block_size+1] for i in idx])
 
+        x = x.to(device)
+        y = y.to(device)
         return x, y 
 
         
