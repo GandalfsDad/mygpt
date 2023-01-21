@@ -47,6 +47,14 @@ def get_encode_decode(chars):
 
     return encode, decode
 
+def train_val_split(data,frac_train=0.9):
+    #Split the data into train and validation
+    train_size = int(frac_train * len(data))
+    train_data = data[:train_size]
+    val_data = data[train_size:]
+
+    return train_data, val_data
+
 if __name__ == '__main__':
     get_lotr_text()
 
