@@ -4,15 +4,17 @@ import torch.nn.functional as F
 
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size):
+    def __init__(self, vocab_size, n_embed = 32):
         super().__init__()
         self.vocab_size = vocab_size
         
-        self.token_embedding = nn.Embedding(vocab_size, vocab_size)
+        self.token_embedding = nn.Embedding(vocab_size, n_embed)
+        self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets = None):
 
-        logits = self.token_embedding(idx)
+        token_embed = self.token_embedding(idx) #(B, T, C)
+        logits = self.lm_head(token_embed) #(B, T, vocab_size)
 
         if targets is None:
             loss = None 
