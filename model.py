@@ -10,9 +10,12 @@ class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
         super().__init__()
         self.vocab_size = vocab_size
+        self.block_size = block_size
+        self.n_embed = n_embed
         
         self.token_embedding = nn.Embedding(vocab_size, n_embed)
         self.position_embedding = nn.Embedding(block_size, n_embed)
+        self.sa_head = Head(head_size = n_embed, n_embed=n_embed, block_size=block_size)
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets = None):
@@ -22,6 +25,8 @@ class BigramLanguageModel(nn.Module):
         pos_embed = self.position_embedding(torch.arange(T)) #(T, C)
 
         x = token_embed + pos_embed #(B, T, C)
+        x = self.sa_head(x) #(B, T, C)
+
         logits = self.lm_head(x) #(B, T, vocab_size)
 
         if targets is None:
@@ -36,7 +41,9 @@ class BigramLanguageModel(nn.Module):
 
     def generate(self, idx, max_len=100):
         for _ in range(max_len):
-            logits, loss = self(idx)
+
+            idx_subset = idx[:,-self.block_size:]
+            logits, loss = self(idx_subset)
             logits = logits[:,-1,:] #last timestep only
             probs = F.softmax(logits, dim= -1)
             idx_next = torch.multinomial(probs, num_samples=1)
@@ -48,7 +55,11 @@ class BigramLanguageModel(nn.Module):
 class Head(nn.Module):
 
     def __init__(self, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
-        super.__init__()
+        super().__init__()
+
+        self.head_size = head_size
+        self.n_embed = n_embed
+        self.block_size = block_size
 
         self.key = nn.Linear(n_embed, head_size, bias=False)
         self.query = nn.Linear(n_embed, head_size, bias=False)
