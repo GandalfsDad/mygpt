@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+DEFAULT_EMBED = 32
+DEFAULT_BLOCK_SIZE = 8
+
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size, n_embed = 32, block_size = 8):
+    def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
         super().__init__()
         self.vocab_size = vocab_size
         
@@ -41,4 +44,28 @@ class BigramLanguageModel(nn.Module):
 
         return idx
 
-    
+
+class Head(nn.Module):
+
+    def __init__(self, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
+        super.__init__()
+
+        self.key = nn.Linear(n_embed, head_size, bias=False)
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+    def forward(self, x):
+        B, T, C = x.shape
+        k = self.key(x)                                             #(B, T, C)
+        q = self.query(x)                                           #(B, T, C)
+
+        wei = k @ q.transpose(-2,-1) / (C ** 0.5)                   #(B, T, T)
+        wei = wei.masked_fill(self.tril[:T,:T] == 0, float('-inf')) #(B, T, T)
+        wei = F.softmax(wei, dim=-1)                                #(B, T, T) 
+
+        v = self.value(x)                                           #(B, T, C)
+        out = wei @ v                                               #(B, T, C)
+
+        return out
