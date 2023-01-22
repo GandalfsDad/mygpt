@@ -20,7 +20,8 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding = nn.Embedding(block_size, n_embed)
 
         self.blocks = nn.Sequential(
-            *[Block(n_heads,n_embed, block_size) for _ in range(n_blocks)]
+            *[Block(n_heads,n_embed, block_size) for _ in range(n_blocks)],
+            nn.LayerNorm(n_embed)
         )
 
         self.lm_head = nn.Linear(n_embed, vocab_size)
@@ -135,8 +136,11 @@ class Block(nn.Module):
         self.mha = MultiHeadAttention(n_heads, self.head_size, n_embed, block_size)
         self.ffwd = FeedForward(n_embed)
 
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
+
     def forward(self, x):
-        x = x + self.mha(x)
-        x = x + self.ffwd(x)
+        x = x + self.mha(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
 
         return x
