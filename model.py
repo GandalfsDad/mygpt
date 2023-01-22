@@ -5,10 +5,11 @@ import torch.nn.functional as F
 DEFAULT_EMBED = 32
 DEFAULT_BLOCK_SIZE = 8
 DEFAULT_HEADS = 4
+DEFAULT_BLOCKS = 3
 
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, n_heads = DEFAULT_HEADS):
+    def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, n_heads = DEFAULT_HEADS, n_blocks = DEFAULT_BLOCKS):
         super().__init__()
         self.vocab_size = vocab_size
         self.block_size = block_size
@@ -17,10 +18,13 @@ class BigramLanguageModel(nn.Module):
         
         self.token_embedding = nn.Embedding(vocab_size, n_embed)
         self.position_embedding = nn.Embedding(block_size, n_embed)
-        self.mha_head = MultiHeadAttention(n_heads= n_heads, head_size = n_embed//n_heads, n_embed=n_embed, block_size=block_size)
+
+        self.blocks = nn.Sequential(
+            *[Block(n_heads,n_embed, block_size) for _ in range(n_blocks)]
+        )
+
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
-        self.ffwd = FeedForward(n_embed)
 
     def forward(self, idx, targets = None):
         B, T = idx.shape
@@ -29,8 +33,7 @@ class BigramLanguageModel(nn.Module):
         pos_embed = self.position_embedding(torch.arange(T)) #(T, C)
 
         x = token_embed + pos_embed #(B, T, C)
-        x = self.mha_head(x) #(B, T, C)
-        x = self.ffwd(x) #(B, T, C)
+        x = self.blocks(x) #(B, T, C)
 
         logits = self.lm_head(x) #(B, T, vocab_size)
 
@@ -115,3 +118,22 @@ class FeedForward(nn.Module):
     
     def forward(self, x):
         return self.net(x)
+
+class Block(nn.Module):
+
+    def __init__(self, n_heads, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
+        super().__init__()
+
+        self.n_heads = n_heads
+        self.head_size = n_embed // n_heads
+        self.n_embed = n_embed
+        self.block_size = block_size
+
+        self.mha = MultiHeadAttention(n_heads, self.head_size, n_embed, block_size)
+        self.ffwd = FeedForward(n_embed)
+
+    def forward(self, x):
+        x = x + self.mha(x)
+        x = x + self.ffwd(x)
+
+        return x
