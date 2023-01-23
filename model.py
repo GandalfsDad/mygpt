@@ -6,21 +6,23 @@ DEFAULT_EMBED = 32
 DEFAULT_BLOCK_SIZE = 8
 DEFAULT_HEADS = 4
 DEFAULT_BLOCKS = 3
+DEFAULT_DROPOUT = 0.2
 
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, n_heads = DEFAULT_HEADS, n_blocks = DEFAULT_BLOCKS):
+    def __init__(self, vocab_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, n_heads = DEFAULT_HEADS, n_blocks = DEFAULT_BLOCKS, dropout = DEFAULT_DROPOUT):
         super().__init__()
         self.vocab_size = vocab_size
         self.block_size = block_size
         self.n_embed = n_embed
         self.n_heads = n_heads
+        self.dropout = dropout
         
         self.token_embedding = nn.Embedding(vocab_size, n_embed)
         self.position_embedding = nn.Embedding(block_size, n_embed)
 
         self.blocks = nn.Sequential(
-            *[Block(n_heads,n_embed, block_size) for _ in range(n_blocks)],
+            *[Block(n_heads,n_embed, block_size, dropout) for _ in range(n_blocks)],
             nn.LayerNorm(n_embed)
         )
 
@@ -63,7 +65,7 @@ class BigramLanguageModel(nn.Module):
 
 class Head(nn.Module):
 
-    def __init__(self, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
+    def __init__(self, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, dropout = DEFAULT_DROPOUT):
         super().__init__()
 
         self.head_size = head_size
@@ -76,6 +78,8 @@ class Head(nn.Module):
 
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
 
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
         B, T, C = x.shape
         k = self.key(x)                                             #(B, T, C)
@@ -84,6 +88,7 @@ class Head(nn.Module):
         wei = k @ q.transpose(-2,-1) / (C ** 0.5)                   #(B, T, T)
         wei = wei.masked_fill(self.tril[:T,:T] == 0, float('-inf')) #(B, T, T)
         wei = F.softmax(wei, dim=-1)                                #(B, T, T) 
+        wei = self.dropout(wei)                                     #(B, T, T)
 
         v = self.value(x)                                           #(B, T, C)
         out = wei @ v                                               #(B, T, C)
@@ -92,7 +97,7 @@ class Head(nn.Module):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, n_heads, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
+    def __init__(self, n_heads, head_size, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, dropout = DEFAULT_DROPOUT):
         super().__init__()
 
         self.n_heads = n_heads
@@ -100,24 +105,26 @@ class MultiHeadAttention(nn.Module):
         self.n_embed = n_embed
         self.block_size = block_size
 
-        self.heads = nn.ModuleList([Head(head_size, n_embed, block_size) for _ in range(n_heads)])
+        self.heads = nn.ModuleList([Head(head_size, n_embed, block_size, dropout) for _ in range(n_heads)])
         self.proj = nn.Linear(n_heads * head_size, n_embed)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([head(x) for head in self.heads] , dim=-1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
 
         return out
 
 class FeedForward(nn.Module):
 
-    def __init__(self, n_embed):
+    def __init__(self, n_embed, dropout=DEFAULT_DROPOUT):
         super().__init__()
 
         self.net = nn.Sequential(
             nn.Linear(n_embed, 4*n_embed),
             nn.ReLU(),
-            nn.Linear(4*n_embed, n_embed)
+            nn.Linear(4*n_embed, n_embed),
+            nn.Dropout(dropout)
         )
     
     def forward(self, x):
@@ -125,7 +132,7 @@ class FeedForward(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, n_heads, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE):
+    def __init__(self, n_heads, n_embed = DEFAULT_EMBED, block_size = DEFAULT_BLOCK_SIZE, dropout = DEFAULT_DROPOUT):
         super().__init__()
 
         self.n_heads = n_heads
@@ -133,8 +140,8 @@ class Block(nn.Module):
         self.n_embed = n_embed
         self.block_size = block_size
 
-        self.mha = MultiHeadAttention(n_heads, self.head_size, n_embed, block_size)
-        self.ffwd = FeedForward(n_embed)
+        self.mha = MultiHeadAttention(n_heads, self.head_size, n_embed, block_size, dropout=dropout)
+        self.ffwd = FeedForward(n_embed, dropout=dropout)
 
         self.ln1 = nn.LayerNorm(n_embed)
         self.ln2 = nn.LayerNorm(n_embed)
